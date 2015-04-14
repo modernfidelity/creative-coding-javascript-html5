@@ -1,0 +1,1439 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+<meta charset="UTF-8">
+
+<title>HTML5 Canvas</title>
+
+<script src="../Modernizr/modernizr-2.0.6.js"></script>
+
+<script type="text/javascript">
+
+/*
+Dan Gries
+rectangleworld.com
+*/
+
+window.addEventListener("load", windowLoadHandler, false);
+
+
+//for debug messages
+function trace(message) {
+	try {
+		console.log(message);
+	}
+	catch (exception) {
+		return;
+	}
+}
+
+function windowLoadHandler() {
+	canvasApp();
+}
+
+function canvasSupport() {
+	return Modernizr.canvas;
+}
+
+function canvasApp() {
+	if (!canvasSupport()) {
+		return;
+	}
+	
+	var displayCanvas = document.getElementById("displayCanvas");
+	var context = displayCanvas.getContext("2d");
+	var displayWidth = displayCanvas.width;
+	var displayHeight = displayCanvas.height;
+	
+	var buffer;
+	var imageData;
+	var pixelData;
+	var baseMaps;
+	var numBaseMaps;
+	var conjugates;
+	var maps;
+	var colors;
+	var bgColor;
+	var urlColor;
+	var applyBubble;
+	var maxIter;
+	var timerStep;
+	var timer;
+	var stateHistory;
+	var historyLength = 20;
+	var usedRotationalSymm;
+	var usedDihedralSymm;
+	var symm;
+	var xSlope;
+	var ySlope;
+	var windowMinX;
+	var windowMaxX;
+	var windowMinY;
+	var windowMaxY;
+	var checkList;
+	var uncheckList;
+	var presetSymm;
+
+	var lowPoints  = 1000000;
+	var medPoints  = 10000000;
+	var highPoints = 100000000;
+	var crazyPoints = 500000000;
+		
+	//controls
+	var btnRegenerate = document.getElementById("btnRegenerate");
+	btnRegenerate.addEventListener("click", regeneratePressed, false);
+
+	var btnExport = document.getElementById("btnExport");
+	btnExport.addEventListener("click", exportPressed, false);
+	
+	var btnBack = document.getElementById("btnBack");
+
+	var cbFixMaps = document.getElementById("cbFixMaps");
+	var cbGrayscale = document.getElementById("cbGrayscale");
+	var rbNumPoints1 = document.getElementById("rbNumPoints1");
+	var rbNumPoints2 = document.getElementById("rbNumPoints2");
+	var rbNumPoints3 = document.getElementById("rbNumPoints3");
+	var rbNumPoints4 = document.getElementById("rbNumPoints4");
+	var cbShorterVectors = document.getElementById("cbShorterVectors");
+	var cbShowMaps = document.getElementById("cbShowMaps");
+	var cbHighGamma = document.getElementById("cbHighGamma");
+	var cbBubble = document.getElementById("cbBubble");
+	var cbNoReflection = document.getElementById("cbNoReflection");
+	var cbPastels = document.getElementById("cbPastels");
+	var cbBrighter = document.getElementById("cbBrighter");
+	var cbFixRatio = document.getElementById("cbFixRatio");
+	var cbRotSymm = document.getElementById("cbRotSymm");
+	var txtSymm = document.getElementById("txtSymm");
+	var cbGreaterTrans = document.getElementById("cbGreaterTrans");
+	
+	var rbNoRotation = document.getElementById("rbNoRotation");
+	var rbLessRotation = document.getElementById("rbLessRotation");
+	var rbFreeRotation = document.getElementById("rbFreeRotation");
+	
+	var rbNoSkew = document.getElementById("rbNoSkew");
+	var rbLessSkew = document.getElementById("rbLessSkew");
+	var rbFreeSkew = document.getElementById("rbFreeSkew");
+	
+	var rbScale1 = document.getElementById("rbScale1");
+	var rbScale2 = document.getElementById("rbScale2");
+	var rbScale3 = document.getElementById("rbScale3");
+	
+	var cbFixColors = document.getElementById("cbFixColors");
+	
+	var cbDihedral = document.getElementById("cbDihedral");
+	var cbFewerMaps = document.getElementById("cbFewerMaps");
+	
+	var cbSwirl = document.getElementById("cbSwirl");
+	
+	var btnPreset1 = document.getElementById("btnPreset1");
+	var btnPreset2 = document.getElementById("btnPreset2");
+	var btnPreset3 = document.getElementById("btnPreset3");
+	var btnPreset4 = document.getElementById("btnPreset4");
+	var btnPreset5 = document.getElementById("btnPreset5");
+	var btnPreset6 = document.getElementById("btnPreset6");
+	var btnPreset7 = document.getElementById("btnPreset7");
+	var btnPreset8 = document.getElementById("btnPreset8");
+	var btnPreset9 = document.getElementById("btnPreset9");
+	btnPreset1.addEventListener("click", selectPreset, false);
+	btnPreset2.addEventListener("click", selectPreset, false);
+	btnPreset3.addEventListener("click", selectPreset, false);
+	btnPreset4.addEventListener("click", selectPreset, false);
+	btnPreset5.addEventListener("click", selectPreset, false);
+	btnPreset6.addEventListener("click", selectPreset, false);
+	btnPreset7.addEventListener("click", selectPreset, false);
+	btnPreset8.addEventListener("click", selectPreset, false);
+	
+	var applySwirl;
+	
+	init();
+	
+	function init() {
+		bgColor = "#000000";
+		urlColor = "#222222";
+		maxIter = lowPoints;
+		
+		stateHistory = [];
+		
+		definePresets();
+				
+		setUpBuffer();
+		
+		setCoeffs();
+		
+		setColors();
+		
+		generate();
+	}
+	
+	function regeneratePressed(evt) {
+		btnBack.removeEventListener("click", backPressed, false);
+		btnRegenerate.removeEventListener("click", regeneratePressed, false);
+		
+		//record current state in history
+		var lastBaseMaps = baseMaps.slice(0); //(cloning array)
+		var lastConjugates = [];
+		if (conjugates.length > 0) {
+			lastConjugates = conjugates.slice(0);
+		}
+
+		var lastColors = colors.slice(0);
+		
+		var state = {
+			baseMaps: lastBaseMaps,
+			conjugates: lastConjugates,
+			colors: lastColors,
+			usedRotationalSymm: usedRotationalSymm,
+			symm: symm,
+			usedDihedralSymm: usedDihedralSymm,
+		}
+		
+		stateHistory.push(state);
+		if (stateHistory.length > historyLength) {
+			stateHistory.splice(0,1);
+		}
+		
+		if (rbNumPoints1.checked) {
+			maxIter = lowPoints;
+		}
+		else if (rbNumPoints2.checked) {
+			maxIter = medPoints;
+		}
+		else if (rbNumPoints3.checked) {
+			maxIter = highPoints;
+		}
+		else {
+			maxIter = crazyPoints;
+		}
+		
+			
+		applyBubble = cbBubble.checked;
+		applySwirl = cbSwirl.checked;
+		
+		setCoeffs();
+		setColors();
+		
+		
+		setUpBuffer();
+		
+		timerStep = 0;
+		if (timer == null) {
+			timer = window.setInterval(onTimer,1);
+		}
+	}
+	
+	function backPressed(evt) {
+		btnBack.removeEventListener("click", backPressed, false);
+		btnRegenerate.removeEventListener("click", regeneratePressed, false);
+		
+		if (stateHistory.length == 0) {
+			btnBack.addEventListener("click", backPressed, false);
+			btnRegenerate.addEventListener("click", regeneratePressed, false);
+			return;
+		}
+		var lastState = stateHistory.splice(stateHistory.length - 1, 1)[0];
+		//copy data from history
+		baseMaps = lastState.baseMaps;
+		conjugates = lastState.conjugates;
+		colors = lastState.colors;
+		usedRotationalSymm = lastState.usedRotationalSymm;
+		usedDihedralSymm = lastState.usedDihedralSymm;
+				
+		numBaseMaps = baseMaps.length;
+		
+		maps = [];
+		maps = baseMaps.slice(0);
+		if (usedRotationalSymm) {
+			cbRotSymm.checked = true;
+			txtSymm.value = symm = lastState.symm;
+		}
+		if (usedDihedralSymm) {
+			cbDihedral.checked = true;
+		}
+		if (conjugates.length > 0) {
+			maps = maps.concat(conjugates);
+		}
+				
+		assignColorsToMaps();
+		
+		applyBubble = cbBubble.checked;
+		applySwirl = cbSwirl.checked;
+		
+		setWindow();
+		
+		//generate
+		if (rbNumPoints1.checked) {
+			maxIter = lowPoints;
+		}
+		else if (rbNumPoints2.checked) {
+			maxIter = medPoints;
+		}
+		else {
+			maxIter = highPoints;
+		}
+				
+		setUpBuffer();
+		
+		timerStep = 0;
+		if (timer == null) {
+			timer = window.setInterval(onTimer,10);
+		}
+	}
+	
+	function onTimer() {
+		//the use of a timer is to allow the appearance of the "please wait" message before beginning the generation process.
+		if (timerStep == 0) {
+			waitMessage();
+		}
+		else {
+			
+			window.clearInterval(timer);
+			timer = null;
+			window.setTimeout(generate,10);
+			btnBack.addEventListener("click", backPressed, false);
+			btnRegenerate.addEventListener("click", regeneratePressed, false);
+		}
+		timerStep++;
+	}	
+	
+	function waitMessage() {
+		context.shadowColor = "rgba(0,0,0,0.6)";
+		context.shadowOffsetX = 6;
+		context.shadowOffsetY = 6;
+		context.shadowBlur = 4;
+		
+		context.fillStyle = "rgba(255,255,255,0.9)";
+		context.font = 'bold italic 48px Helvetica, Arial, sans-serif';
+		context.fillText("please wait...", displayWidth/2 - 150,displayHeight/2);
+		
+		context.shadowColor = "rgba(100,100,100,0)";
+		context.shadowOffsetX = 0;
+		context.shadowOffsetY = 0;
+		context.shadowBlur = 0;
+	}
+	
+	function setUpBuffer() {
+		var i;
+		buffer = [];
+		for (i = 0; i < displayHeight*displayWidth; i++) {
+			buffer.push(0);
+		}
+	}
+		
+	function setCoeffs() {
+		var x1,y1,x0,y0;
+		var det;
+		var maxDet = 1;
+		var scale;
+		var angle1, angle2, rad1, rad2;
+		var transX, transY;
+		var mapColor;
+		var transRad,transAngle;
+		var transFactor;
+		var sign;
+		var rotAngle;
+		var skewAngle;
+		var rotAngleMax;
+		var skewAngleMax;
+		var maxScale;
+		var minScale;
+		var addSymmetriesOnly = false;
+		symm = parseInt(txtSymm.value);
+		
+		if (!cbFixMaps.checked) {
+			
+			baseMaps = [];
+			
+			if (cbFewerMaps.checked) {
+				numBaseMaps = 2+Math.floor(Math.random()*2);
+			}
+			else {
+				numBaseMaps = 2+Math.floor(Math.random()*5);
+			}
+			
+			if (rbLessRotation.checked) {
+				//rotAngleMax = 0; //TESTING
+				rotAngleMax = Math.PI/12;
+			}
+			else if (rbFreeRotation.checked) {
+				rotAngleMax = 2*Math.PI;
+			}
+			else {
+				rotAngleMax = 0;
+			}
+			
+			if (rbFreeSkew.checked) {
+				skewAngleMax = Math.random()*Math.PI/4;
+			}
+			else if (rbLessSkew.checked) {
+				skewAngleMax = Math.random()*Math.PI/12;
+			}
+			else {
+				skewAngleMax = 0;
+			}
+			
+			//0.2 to 0.5, 0.33 to 0.67, 0.4 to 1
+			
+			if (rbScale1.checked) {
+				maxScale = 0.5;
+				minScale = 0.2;
+			}
+			else if (rbScale2.checked) {
+				maxScale = 0.67;
+				minScale = 0.33;
+			}
+			else {
+				maxScale = 1;
+				minScale = 0.4;
+			}
+			
+			for (var i = 0; i < numBaseMaps; i++) {
+				rotAngle = (1-2*Math.random())*rotAngleMax;
+				skewAngle = (1-2*Math.pow(Math.random(),3))*skewAngleMax;
+				angle1 = rotAngle + skewAngle;
+				angle2 = rotAngle - skewAngle;
+				if (cbNoReflection.checked) {
+					rad1 = minScale + Math.random()*(maxScale - minScale);
+					if (cbFixRatio.checked) {
+						rad2 = rad1;
+					}
+					else {
+						rad2 = minScale + Math.random()*(maxScale - minScale);
+					}
+				}
+				else {
+					rad1 = (Math.random() < 0.5 ? -1 : 1)*(minScale + Math.random()*(maxScale - minScale));
+					if (cbFixRatio.checked) {
+						rad2 = rad1;
+					}
+					else {
+						rad2 = (Math.random() < 0.5 ? -1 : 1)*(minScale + Math.random()*(maxScale - minScale));
+					}
+				}
+				
+				x0 = rad1*Math.cos(angle1);
+				y0 = rad1*Math.sin(angle1);
+				x1 = -rad2*Math.sin(angle2);
+				y1 = rad2*Math.cos(angle2);
+				
+				
+				var maxX = Math.abs(x0) + Math.abs(x1);
+				if (maxX > 1) {
+					//scale down the whole matrix
+					x0 /= maxX;
+					x1 /= maxX;
+					y0 /= maxX;
+					y1 /= maxX;
+				}
+				var maxY = Math.abs(y0) + Math.abs(y1);
+				if (maxY > 1) {
+					x0 /= maxY;
+					x1 /= maxY;
+					y0 /= maxY;
+					y1 /= maxY;
+				}
+				
+				if (cbGreaterTrans.checked) {
+					transX = Math.pow(0.75+0.25*Math.random(),0.5)*(Math.random() < 0.5 ? -1 : 1)*(1 - Math.abs(x0) - Math.abs(x1));
+					transY = Math.pow(0.75+0.25*Math.random(),0.5)*(Math.random() < 0.5 ? -1 : 1)*(1 - Math.abs(y0) - Math.abs(y1));
+					//TESTING - maximum translation:
+					//transX = (Math.random() < 0.5 ? -1 : 1)*(1 - Math.abs(x0) - Math.abs(x1));
+					//transY = (Math.random() < 0.5 ? -1 : 1)*(1 - Math.abs(y0) - Math.abs(y1));
+					
+				}
+				else {
+					transX = Math.pow(Math.random(),0.5)*(Math.random() < 0.5 ? -1 : 1)*(1 - Math.abs(x0) - Math.abs(x1));
+					transY = Math.pow(Math.random(),0.5)*(Math.random() < 0.5 ? -1 : 1)*(1 - Math.abs(y0) - Math.abs(y1));
+				}
+				
+				var mat = {
+					a: x0,
+					b: x1,
+					c: y0,
+					d: y1,
+					tx: transX,
+					ty: transY
+				}
+				baseMaps.push(mat);
+			}
+		}
+		
+		var rotations = [];
+		conjugates = [];
+		var k,cos,sin,a,b,c,d,tx,ty,map;
+		usedRotationalSymm = false; //may be made true below
+		usedDihedralSymm = false;
+		
+		if (cbRotSymm.checked) {
+			if ((!!symm)&&(symm > 1)) {
+				usedRotationalSymm = true;
+				var angle = 2*Math.PI/symm;
+				for (i = 1; i < symm; i++) {
+					cos = Math.cos(angle*i);
+					sin = Math.sin(angle*i);
+					//form all the conjugates for this rotation
+					for (k = 0; k < baseMaps.length; k++) {
+						map = baseMaps[k];
+						a = map.a;
+						b = map.b;
+						c = map.c;
+						d = map.d;
+						tx = map.tx;
+						ty = map.ty;
+						var conj = {
+							a: cos*(a*cos - b*sin) - sin*(c*cos - d*sin),
+							b: cos*(a*sin + b*cos) - sin*(c*sin + d*cos),
+							c: sin*(a*cos - b*sin) + cos*(c*cos - d*sin),
+							d: sin*(a*sin + b*cos) + cos*(c*sin + d*cos),
+							tx: cos*tx - sin*ty,
+							ty: sin*tx + cos*ty
+						}
+						conjugates.push(conj);
+						
+						/*
+						//conjugates of dihedral
+						if (cbDihedral.checked) {
+							var conj = {
+								a: cos*(-cos) - sin*(-sin),
+								b: cos*(-sin) - sin*(cos),
+								c: sin*(-cos) + cos*(-sin),
+								d: sin*(-sin) + cos*(cos),
+								tx: 0,
+								ty: 0
+							}
+							conjugates.push(conj);		
+						}
+						*/
+					}
+				}
+			}
+		}
+
+		if (cbDihedral.checked) {
+			usedDihedralSymm = true;
+			var len = conjugates.length;
+			for (k = 0; k < baseMaps.length; k++) {
+				map = baseMaps[k];
+				a = map.a;
+				b = map.b;
+				c = map.c;
+				d = map.d;
+				tx = map.tx;
+				ty = map.ty;
+				var conj = {
+					a: a,
+					b: -b,
+					c: -c,
+					d: d,
+					tx: -tx,
+					ty: ty
+				}
+				conjugates.push(conj);
+			}
+			
+			for (k = 0; k < len; k++) {
+				map = conjugates[k];
+				a = map.a;
+				b = map.b;
+				c = map.c;
+				d = map.d;
+				tx = map.tx;
+				ty = map.ty;
+				var conj = {
+					a: a,
+					b: -b,
+					c: -c,
+					d: d,
+					tx: -tx,
+					ty: ty
+				}
+				conjugates.push(conj);
+			}
+
+		}
+
+
+		maps = [];
+		maps = baseMaps.slice(0);
+		if ((cbRotSymm.checked)||(cbDihedral.checked)) {
+			maps = maps.concat(conjugates);
+		}
+				
+		setWindow();
+	}
+	
+	function setWindow() {
+		var m, n;
+		var mapMinX, mapMinY, mapMaxX, mapMaxY;
+		var margin;
+		var marginFactor = 0.03;
+		var a, b, c, d, tx, ty;
+		windowMinX = Number.POSITIVE_INFINITY;
+		windowMaxX = Number.NEGATIVE_INFINITY;
+		windowMinY = Number.POSITIVE_INFINITY;
+		windowMaxY = Number.NEGATIVE_INFINITY;
+		
+		if (applySwirl) {
+			windowMinX = -1.46;
+			windowMaxX = 1.46;
+			windowMinY = -1.46;
+			windowMaxY = 1.46;
+			return;
+		}
+		
+		//work out composition of all possible pairs of maps
+		for (var i = 0; i < maps.length; i++) {
+			for (var j = 0; j < maps.length; j++) {
+				m = maps[i];
+				n = maps[j];
+				
+				a =  m.a*n.a +  m.b*n.c;
+				b =  m.a*n.b +  m.b*n.d;
+				c =  m.c*n.a +  m.d*n.c;
+				d =  m.c*n.b +  m.d*n.d;
+				tx = m.a*n.tx + m.b*n.ty + m.tx;
+				ty = m.c*n.tx + m.d*n.ty + m.ty;
+				
+				mapMinX = -Math.abs(a) - Math.abs(b) + tx;
+				mapMaxX =  Math.abs(a) + Math.abs(b) + tx;
+				mapMinY = -Math.abs(c) - Math.abs(d) + ty;
+				mapMaxY =  Math.abs(c) + Math.abs(d) + ty;
+				
+				if (mapMinX < windowMinX) {
+					windowMinX = mapMinX;
+				}
+				if (mapMaxX > windowMaxX) {
+					windowMaxX = mapMaxX;
+				}
+				if (mapMinY < windowMinY) {
+					windowMinY = mapMinY;
+				}
+				if (mapMaxY > windowMaxY) {
+					windowMaxY = mapMaxY;
+				}
+			}
+		}
+		
+		/*
+		trace(windowMinX);
+		trace(windowMaxX);
+		trace(windowMinY);
+		trace(windowMaxY);
+		trace("\n");
+		*/
+		
+		//now determine window
+		var dx = windowMaxX - windowMinX;
+		var dy = windowMaxY - windowMinY;
+		//maintain aspect ratio:
+		if (dx < dy) {
+			windowMaxX += 0.5*(dy-dx);
+			windowMinX -= 0.5*(dy-dx);
+			dx = dy;
+		}
+		else if (dy < dx) {
+			windowMaxY += 0.5*(dx-dy);
+			windowMinY -= 0.5*(dx-dy);
+			dy = dx;
+		}
+		
+				
+		//margin
+		var margin = dx*marginFactor;
+		windowMinX -= margin;
+		windowMaxX += margin;
+		windowMinY -= margin;
+		windowMaxY += margin;
+		
+		if (windowMaxX == windowMinX) {
+			windowMaxX = 1;
+			windowMinX = -1;
+		}
+		if (windowMaxY == windowMinY) {
+			windowMaxY = 1;
+			windowMinY = -1;
+		}
+		
+		/*
+		trace(windowMinX);
+		trace(windowMaxX);
+		trace(windowMinY);
+		trace(windowMaxY);
+		*/
+		
+	}
+	
+	function setColors() {
+		var numColorsToAdd;
+		var colorMin;
+		var colorMax;
+		var r0, g0, b0;
+		var maxComponent;
+		
+		if (cbPastels.checked) {
+			colorMin = 128;
+			colorMax = 255;
+		}
+		else {
+			colorMin = 48;
+			colorMax = 255;
+		}
+		
+		if (!cbFixColors.checked) {
+			colors = [];
+		}
+		
+		if (numBaseMaps < colors.length) {
+			numColorsToAdd = 0;
+		}
+		else {
+			numColorsToAdd = numBaseMaps - colors.length;
+		}
+		
+		for (var i = 0; i < numColorsToAdd; i++) {
+			r0 = colorMin + Math.random()*(colorMax - colorMin);
+			g0 = colorMin + Math.random()*(colorMax - colorMin);
+			b0 = colorMin + Math.random()*(colorMax - colorMin);
+			
+			maxComponent = Math.max(r0, Math.max(g0,b0));
+			
+			if (cbBrighter.checked) {
+				r0 = Math.round(255/maxComponent*r0);
+				g0 = Math.round(255/maxComponent*g0);
+				b0 = Math.round(255/maxComponent*b0);
+			}
+			else {
+				r0 = Math.round(r0);
+				g0 = Math.round(g0);
+				b0 = Math.round(b0);
+			}
+			
+			var col = {
+				r: Math.round(255/maxComponent*r0),
+				g: Math.round(255/maxComponent*g0),
+				b: Math.round(255/maxComponent*b0)
+			}
+			colors.push(col);
+		}
+		
+		assignColorsToMaps();
+	}
+	
+	function assignColorsToMaps() {
+		for (var k = 0; k < maps.length; k++) {
+			maps[k].color = colors[k % numBaseMaps];
+		}
+	}
+	
+	function mapText() {
+		var j;
+		var string = "";
+		for (j = 0; j < maps.length; j++) {
+			var map = maps[j];
+			string += "["+map.a+", "+map.b+", "+map.tx+ "]\n[" + map.c + ", " + map.d + "," + map.ty + "]";
+			string += "\nr: " + map.color.r + " g: " + map.color.g + " b: " + map.color.b + "\n\n";
+		}
+		return string;
+	}
+	
+	function mapTextArray() {
+		var j;
+		var string;
+		var stringArray = [];
+		for (j = 0; j < baseMaps.length; j++) {
+			var map = baseMaps[j];
+			string = "[" + map.a + ", " + map.b + ", "+ map.tx + "]";
+			stringArray.push(string);
+			string = "[" + map.c + ", " + map.d + "," + map.ty + "]";
+			stringArray.push(string);
+			stringArray.push(""); //line space
+		}
+		return stringArray;
+	}	
+	
+	function generate() {
+		var ignoreCount = 20;
+		var i,j;
+		var x,y;
+		var numFunctions = maps.length;
+		var f;
+		var p;
+		var pixelX,pixelY;
+		var inBounds;
+		var index;
+		var index4;
+		var tempX;
+		var matrix;
+		var r,g,b;
+		var color;
+		var rad, theta;
+		var maxCount = 0;
+		var grayscale = cbGrayscale.checked;
+		var gammaRecip;
+		var blendweight = 1;
+		var c;
+		var bubbleFactor;
+		var bufferAmt;
+		var factor;
+		var ln2Recip = 1/Math.LN2;
+		var sin,cos,radSquare,rad,arg;
+			
+		/*
+		trace("maps:");
+		for (j = 0; j < maps.length; j++) {
+			var map = maps[j];
+			trace(mapText());
+		}
+		*/
+		
+		if (cbHighGamma.checked) {
+			gammaRecip = 0.3;
+		}
+		else {
+			gammaRecip = 0.45;
+		}
+		
+		//background color
+		context.fillStyle = "#000000";
+		context.fillRect(0,0,displayWidth,displayHeight);
+		
+		//set up image data
+		imageData = context.getImageData(0,0,displayWidth,displayHeight);
+		pixelData = imageData.data;
+				
+		x = 1 - 2*Math.random();
+		y = 1 - 2*Math.random();
+		
+		r = g = b = 0;
+		
+		xSlope = displayWidth/(windowMaxX - windowMinX);
+		ySlope = displayWidth/(windowMaxY - windowMinY);
+
+		//stabilizing iterations		
+		for (i = 0; i < ignoreCount; ++i) {
+			//pick a random map and apply it
+			//Note ~~() does same thing as Math.floor() if the argument is positive.
+			matrix = maps[~~(numFunctions*Math.random())];
+			tempX = matrix.a*x + matrix.b*y + matrix.tx;
+			y = matrix.c*x + matrix.d*y + matrix.ty;
+			x = tempX;
+			
+			if (applyBubble) {
+				bubbleFactor = 3/(2+Math.sqrt(x*x+y*y));
+				x *= bubbleFactor;
+				y *= bubbleFactor;
+			}
+			
+			if (applySwirl) {
+				cos = Math.cos(radSquare = x*x+y*y);
+				sin = Math.sin(radSquare);
+				tempX = x*sin - y*cos;
+				y = x*cos + y*sin;
+				x = tempX;
+			}
+						
+			if (!grayscale) {
+				color = matrix.color;
+				r = (r+color.r)/2;
+				g = (g+color.g)/2;
+				b = (b+color.b)/2;
+			}
+		}
+		
+		//display iterations
+		for (i = 0; i < maxIter; ++i) {
+			//pick a random map and apply it
+			//Note ~~() does same thing as Math.floor() if the argument is positive.
+			matrix = maps[~~(numFunctions*Math.random())];
+			tempX = matrix.a*x + matrix.b*y + matrix.tx;
+			y = matrix.c*x + matrix.d*y + matrix.ty;
+			x = tempX;
+			
+			if (applyBubble) {
+				bubbleFactor = 3/(2+Math.sqrt(x*x+y*y));
+				x *= bubbleFactor;
+				y *= bubbleFactor;
+			}
+			
+			if (applySwirl) {
+				cos = Math.cos(radSquare = x*x+y*y);
+				sin = Math.sin(radSquare);
+				tempX = x*sin - y*cos;
+				y = x*cos + y*sin;
+				x = tempX;
+			}
+						
+			if (!grayscale) {
+				color = matrix.color;
+				r = (r+color.r)/2;
+				g = (g+color.g)/2;
+				b = (b+color.b)/2;
+			}
+			
+			//pixelX = Math.round(xSlope*(x - windowMinX));
+			//pixelY = Math.round(ySlope*(y - windowMinY));
+			//optimized:
+			pixelX = ~~(0.5+xSlope*(x - windowMinX));
+			pixelY = ~~(0.5+ySlope*(y - windowMinY));
+			
+					
+			if ((pixelX < displayWidth) && (pixelY < displayHeight) && (pixelX >= 0) && (pixelY >= 0)) {
+				//write to buffer and image data
+				
+				//index = Math.floor(pixelY*displayWidth + pixelX);
+				//optimized:
+				index = ~~(pixelY*displayWidth + pixelX);
+				index4 = 4*index;
+				//buffer[index] += 1;
+				bufferAmt = ++buffer[index];
+				
+				if (bufferAmt > maxCount) {
+					maxCount = bufferAmt;
+				}
+				
+				if (grayscale) {
+					if (pixelData[index4] != 255) {
+						pixelData[index4] = 255;
+						pixelData[index4+1] = 255;
+						pixelData[index4+2] = 255;
+					}
+				}
+				else {
+					
+					/*
+					pixelData[index4]   = (bufferAmt*pixelData[index4] + r)/(bufferAmt + 1);
+					pixelData[index4+1] = (bufferAmt*pixelData[index4+1] + g)/(bufferAmt + 1);
+					pixelData[index4+2] = (bufferAmt*pixelData[index4+2] + b)/(bufferAmt + 1);
+					*/
+					
+					pixelData[index4]   = (bufferAmt*pixelData[index4] + r)*(factor = 1/(bufferAmt + 1));
+					pixelData[index4+1] = (bufferAmt*pixelData[index4+1] + g)*factor;
+					pixelData[index4+2] = (bufferAmt*pixelData[index4+2] + b)*factor;
+				}
+										
+			}
+		}
+		
+		//render
+		//loop through whole display and set alpha according to count
+		for (i = 0; i < displayWidth*displayHeight; ++i) {
+			//optimize by avoiding log for zero count
+			if (buffer[i] != 0) {
+				//pixelData[i*4+3] = Math.floor(Math.pow(Math.log(1+buffer[i]/maxCount)/Math.LN2,gammaRecip)*255);
+				pixelData[i*4+3] = ~~(Math.pow(Math.log(1+buffer[i]/maxCount)*ln2Recip,gammaRecip)*255);
+			}
+		}
+		
+		//free up memory
+		buffer = [];
+		
+		//draw display
+		context.putImageData(imageData,0,0);
+				
+		//draw solid background - needs to be done because there are low-alpha pixels in display now.
+		context.globalCompositeOperation = "destination-over";
+		context.fillStyle = "#000000";
+		context.fillRect(0,0,displayWidth,displayHeight);
+		context.globalCompositeOperation = "source-over";
+	}
+	
+	
+	function selectPreset(evt) {
+		var preset = evt.target.id[9]-1;
+		
+		for (var i = 0; i < checkList[preset].length; i++) {
+			checkList[preset][i].checked = true;	
+		}
+		for (var i = 0; i < uncheckList[preset].length; i++) {
+			uncheckList[preset][i].checked = false;	
+		}
+		if (presetSymm[preset] != -1) {
+			txtSymm.value = presetSymm[preset];
+		}
+		
+		cbFixMaps.checked = false;
+		cbFixColors.checked = false;
+	}
+		
+	function definePresets() {
+		checkList = [];
+		uncheckList = [];
+		presetSymm = [];
+		
+		//default
+		checkList[0] = [rbFreeRotation, rbScale3, rbLessSkew, cbBrighter, rbNumPoints2];
+		uncheckList[0] = [cbNoReflection, cbFixRatio, cbGreaterTrans, cbFewerMaps, cbRotSymm, cbDihedral, cbBubble, cbSwirl, cbGrayscale, cbPastels, cbHighGamma];
+		presetSymm[0] = -1;
+		
+		//angels and devils: free rot, free skew, medium scale, dihedral
+		checkList[1] = [rbFreeRotation, rbFreeSkew, rbScale2, cbBrighter, rbNumPoints2, cbDihedral];
+		uncheckList[1] = [cbNoReflection, cbFixRatio, cbGreaterTrans, cbFewerMaps, cbRotSymm, cbBubble, cbSwirl, cbGrayscale, cbPastels, cbHighGamma];
+		presetSymm[1] = -1;
+		
+		//floral: free rotation, NO skewing, short vectors, preserve aspect ratio, 5-fold symmetry, high gamma
+		checkList[2] = [rbFreeRotation, rbNoSkew, rbScale1, cbFixRatio, cbRotSymm, cbBrighter, rbNumPoints2, cbHighGamma];
+		uncheckList[2] = [cbNoReflection, cbGreaterTrans, cbFewerMaps, cbDihedral, cbBubble, cbSwirl, cbGrayscale, cbPastels];
+		presetSymm[2] = 5;
+		
+		//snowflakes: grayscale, 6-fold symm, dihedral, short vectors
+		checkList[3] = [rbFreeRotation, rbFreeSkew, rbScale1, cbBrighter, cbDihedral, cbRotSymm, cbGrayscale, rbNumPoints2];
+		uncheckList[3] = [cbNoReflection, cbFixRatio, cbGreaterTrans, cbFewerMaps, cbBubble, cbSwirl, cbPastels, cbHighGamma];
+		presetSymm[3] = 6;
+		
+		//castles: no rotation, no skewing, medium scaling, no reflection, preserve aspect, dihedral symm.
+		checkList[4] = [rbNoRotation, rbNoSkew, rbScale2, cbNoReflection, cbFixRatio, cbDihedral, cbBrighter, rbNumPoints2];
+		uncheckList[4] = [cbFixRatio, cbGreaterTrans, cbFewerMaps, cbRotSymm, cbBubble, cbSwirl, cbPastels, cbHighGamma];
+		presetSymm[4] = -1;
+		
+		//swirls: less rot, less skew, longer scaling, no reflection, greater translation, swirl
+		checkList[5] = [rbLessRotation, rbLessSkew, rbScale3, cbNoReflection, cbGreaterTrans, cbSwirl, cbBrighter, rbNumPoints2];
+		uncheckList[5] = [cbFixRatio, cbFewerMaps, cbRotSymm, cbDihedral, cbBubble, cbGrayscale, cbPastels, cbHighGamma];
+		presetSymm[5] = -1;
+		
+		//bubbled: free rot, less skew, longer scale, greater trans, bubble
+		checkList[6] = [rbFreeRotation, rbScale3, rbLessSkew, cbGreaterTrans, cbBubble, cbBrighter, rbNumPoints2];
+		uncheckList[6] = [cbNoReflection, cbFixRatio, cbFewerMaps, cbRotSymm, cbDihedral, cbSwirl, cbGrayscale, cbPastels, cbHighGamma];
+		presetSymm[6] = -1;
+		
+		//rigid maps: free rot, no skew, longer scale, no reflection, preserve aspect ratio, high gamma
+		checkList[7] = [rbFreeRotation, rbScale3, rbNoSkew, cbNoReflection, cbFixRatio, cbBrighter, cbHighGamma, rbNumPoints2];
+		uncheckList[7] = [cbGreaterTrans, cbFewerMaps, cbRotSymm, cbDihedral, cbBubble, cbSwirl, cbGrayscale, cbPastels];
+		presetSymm[7] = -1;
+	}
+	
+	/*
+	var cbFixMaps = document.getElementById("cbFixMaps");
+	var cbGrayscale = document.getElementById("cbGrayscale");
+	var rbNumPoints1 = document.getElementById("rbNumPoints1");
+	var rbNumPoints2 = document.getElementById("rbNumPoints2");
+	var rbNumPoints3 = document.getElementById("rbNumPoints3");
+	var rbNumPoints4 = document.getElementById("rbNumPoints4");
+	var cbShorterVectors = document.getElementById("cbShorterVectors");
+	var cbShowMaps = document.getElementById("cbShowMaps");
+	var cbHighGamma = document.getElementById("cbHighGamma");
+	var cbBubble = document.getElementById("cbBubble");
+	var cbNoReflection = document.getElementById("cbNoReflection");
+	var cbPastels = document.getElementById("cbPastels");
+	var cbBrighter = document.getElementById("cbBrighter");
+	var cbFixRatio = document.getElementById("cbFixRatio");
+	var cbRotSymm = document.getElementById("cbRotSymm");
+	var txtSymm = document.getElementById("txtSymm");
+	var cbGreaterTrans = document.getElementById("cbGreaterTrans");
+	
+	var rbNoRotation = document.getElementById("rbNoRotation");
+	var rbLessRotation = document.getElementById("rbLessRotation");
+	var rbFreeRotation = document.getElementById("rbFreeRotation");
+	
+	var rbNoSkew = document.getElementById("rbNoSkew");
+	var rbLessSkew = document.getElementById("rbLessSkew");
+	var rbFreeSkew = document.getElementById("rbFreeSkew");
+	
+	var rbScale1 = document.getElementById("rbScale1");
+	var rbScale2 = document.getElementById("rbScale2");
+	var rbScale3 = document.getElementById("rbScale3");
+	
+	var cbFixColors = document.getElementById("cbFixColors");
+	
+	var cbDihedral = document.getElementById("cbDihedral");
+	var cbFewerMaps = document.getElementById("cbFewerMaps");
+	
+	var cbSwirl = document.getElementById("cbSwirl");
+
+	*/
+	
+	function exportPressed(evt) {
+		
+		var lineSpacing = 11;
+		var URLmargin = 30;
+		var stringArray;
+		
+		var exportHeight;
+		if (cbShowMaps.checked) {
+			stringArray = mapTextArray();
+			exportHeight = URLmargin + displayHeight + stringArray.length*lineSpacing + 5;
+			if ((usedRotationalSymm)||(usedDihedralSymm)) {
+				exportHeight += lineSpacing + 10;
+			}
+			if (applyBubble) {
+				exportHeight += lineSpacing + 10;
+			}
+			if (applySwirl) {
+				exportHeight += lineSpacing + 10;
+			}
+		}
+		else {
+			exportHeight = URLmargin + displayHeight;
+		}
+		
+		//off screen canvas used only when exporting image
+		var exportCanvas = document.createElement('canvas');
+		exportCanvas.width = displayWidth;
+		exportCanvas.height = exportHeight;
+		var exportCanvasContext = exportCanvas.getContext("2d");
+		
+		//background - otherwise background will be transparent.
+		exportCanvasContext.fillStyle = bgColor;
+		exportCanvasContext.fillRect(0,0,displayWidth, exportHeight);
+		
+		//draw
+		exportCanvasContext.drawImage(displayCanvas, 0,0,displayWidth,displayHeight,0,URLmargin,displayWidth,displayHeight);
+		
+		//add printed url to image
+		exportCanvasContext.fillStyle = urlColor;
+		exportCanvasContext.font = 'bold italic 16px Helvetica, Arial, sans-serif';
+		exportCanvasContext.textBaseline = "top";
+		var metrics = exportCanvasContext.measureText("rectangleworld.com");
+		exportCanvasContext.fillText("rectangleworld.com", displayWidth - metrics.width - 10, 5);
+		
+		
+		//print maps
+		if (cbShowMaps.checked) {
+			exportCanvasContext.font = 'bold 10px Helvetica, Arial, sans-serif';
+			var lineY = URLmargin + displayHeight + 5;
+			for (var i = 0; i < stringArray.length; i++) {
+				exportCanvasContext.fillText(stringArray[i], 5, lineY);
+				lineY += lineSpacing;
+			}
+			if ((usedRotationalSymm)&&(usedDihedralSymm)) {
+				exportCanvasContext.fillText('plus conjugates by both rotations of order ' + symm + ' and reflection over the vertical axis', 5, lineY);
+				lineY += lineSpacing + lineSpacing;
+			}
+			else if (usedRotationalSymm) {
+				exportCanvasContext.fillText('plus conjugates by rotational group of order ' + symm, 5, lineY);
+				lineY += lineSpacing + lineSpacing;
+			}
+			else if (usedDihedralSymm) {
+				exportCanvasContext.fillText('plus conjugates by reflection over the vertical axis' + symm, 5, lineY);
+				lineY += lineSpacing + lineSpacing;
+			}
+			if (applyBubble) {
+				exportCanvasContext.fillText('with nonlinear "bubble" variation f(x,y) = 3/(2+r^2)*(x,y)', 5, lineY);
+				lineY += lineSpacing + lineSpacing;
+			}
+			if (applySwirl) {
+				exportCanvasContext.fillText('with nonlinear "swirl" variation f(x,y) = (x*sin(r^2) - y*cos(r^2), x*cos(r^2) + y*sin(r^2))', 5, lineY);
+			}
+		}
+
+		//we will open a new window with the image contained within:		
+		//retrieve canvas image as data URL:
+		var dataURL = exportCanvas.toDataURL("image/png");
+		//open a new window of appropriate size to hold the image:
+		var imageWindow = window.open("", "fractalLineImage", "left=0,top=0,width="+displayWidth+",height="+exportHeight+",toolbar=0,resizable=0,scrollbars=1");
+		//write some html into the new window, creating an empty image:
+		imageWindow.document.write("<title>Export Image</title>")
+		/*
+		imageWindow.document.write("<img id='exportImage'"
+									+ " alt=''"
+									+ " height='" + exportHeight + "'"
+									+ " width='"  + displayWidth  + "'"
+									+ " style='position:absolute;left:0;top:0'/>");
+		*/
+		imageWindow.document.write("<img id='exportImage'"
+									+ " alt=''"
+									+ " height='" + exportHeight + "'"
+									+ " width='"  + displayWidth  + "'"
+									+ " style='display:block;position:absolute;left:0;top:0'/>");
+		imageWindow.document.close();
+		//copy the image into the empty img in the newly opened window:
+		var exportImage = imageWindow.document.getElementById("exportImage");
+		exportImage.src = dataURL;
+	}
+
+}
+
+</script>
+
+<title>HTML5 Canvas Fractals</title>
+
+<style type="text/css">
+	body {background-color:#000000; color:#888888;} 
+	p {font-family: sans-serif; color:#888888; font-size:13px;}
+	a {font-family: sans-serif; color:#d15423; text-decoration:none;}
+	h {font-family: sans-serif; color:#d15423; text-decoration:none;}
+	form {font-family: sans-serif; color:#888888; font-size:13px; padding:5px;}
+	
+	#container {
+		width:1170px;
+		margin:0px auto;
+	}
+	
+	#displayCanvas {
+		float:left;
+		height:600px;
+		width:600px;
+	}
+	
+	#titleText {
+		float:left;
+		width:488px;
+		padding-left:10px;
+		padding-right:10px;
+		background:#181818;
+		border:1px solid #000;
+	}
+	
+	#rectangleworldURL {
+		text-align:left;
+		width:158px;
+		height:20px;
+		line-height:20px;
+		float:left;
+		padding:5px;
+		font-size:14px;
+		background:#111;
+		border:1px solid #000;
+	}
+	
+	.panelColumn {
+		float:left;
+		width:170px;
+		padding:0px;
+	}
+		
+	.groupHeader {
+		line-height:150%;
+		float:left;
+		/*height:20px;*/
+		width:100%;
+		/*border:1px solid #000;*/
+	}
+	.groupHeader p {
+		/*line-height:150%;*/
+		width:100%;
+		font-weight:bold;
+		margin:2px 5px 2px 5px;
+	}
+	
+	.mapPanel, .colorPanel, .lockPanel, .buttonPanel {
+		line-height:140%;
+		float:left;
+		width:168px;
+		margin:0px;
+		border:1px solid #000;
+		background:#222;
+	}
+	
+	.presetPanel {
+		line-height:133%;
+		float:left;
+		width:168px;
+		margin:0px;
+		border:1px solid #000;
+		background:#111;
+	}
+	
+	.mapPanel {
+		background:#1f2429;
+	}
+	.colorPanel {
+		background:#202F20;
+	}
+	.lockPanel {
+		background:#322020;
+	}
+	.buttonPanel {
+		background:#241d26;
+	}
+	.note {
+		line-height:normal;
+		font-size:11px;
+		margin-top: 1px;
+	}
+	
+	.presetButton {
+		width:24px;
+		height:18px;
+		text-align:center;
+		font-size:10px;
+	}
+	
+	#exportPanel {
+		float:left;
+		width:158px;
+		padding:5px;
+		background:#222;
+		border:1px solid #000;
+	}
+	
+</style>
+
+</head>
+<body>
+
+<div id="container">
+
+	<canvas id="displayCanvas" width="1200px" height="1200px">Your browser does not support HTML5 canvas.</canvas>
+	
+    <div id="titleText">
+    	<p>
+            <i><span style="color:#ccc; font-size:15px;">HTML5 Canvas Fractals: The Chaos Game with Random Maps.</span></i>
+        </p>
+    </div>
+    <div class="panelColumn">
+
+            <div class="mapPanel">
+                <div class="groupHeader"><p>Rotation</p></div>
+                <form>
+                    <input type="radio" id="rbNoRotation" name="rotationGroup">no rotation</input>
+                    <br/>
+                    <input type="radio" id="rbLessRotation" name="rotationGroup">less rotation</input>
+                    <br/>
+                    <input type="radio" id="rbFreeRotation" name="rotationGroup" checked>free rotation</input>
+                </form>
+            </div>
+            <div class="mapPanel">
+                <div class="groupHeader"><p>Skewing</p></div>
+                <form>
+                    <input type="radio" id="rbNoSkew" name="skewGroup">no skewing</input>
+                    <br/>
+                    <input type="radio" id="rbLessSkew" name="skewGroup" checked>less skewing</input>
+                    <br/>
+                    <input type="radio" id="rbFreeSkew" name="skewGroup">free skewing</input>
+                </form>
+            </div>
+        
+        	<div class="mapPanel">
+                <div class="groupHeader"><p>Scaling</p></div>
+                <form>
+                    <input type="radio" id="rbScale1" name="scaleGroup">short (0.2 to 0.5)</input>
+                    <br/>
+                    <input type="radio" id="rbScale2" name="scaleGroup">medium (0.33 to 0.67)</input>
+                    <br/>
+                    <input type="radio" id="rbScale3" name="scaleGroup" checked>longer (0.4 to 1)</input>
+                    <br>
+                    <input type="checkbox" id="cbNoReflection">no reflection</input>
+                    <br>
+                    <input type="checkbox" id="cbFixRatio">preserve aspect ratio</input>
+                </form>
+            </div>
+        
+        	<div class="mapPanel">
+                <div class="groupHeader"><p>Translation</p></div>
+                <form>
+                    <input type="checkbox" id="cbGreaterTrans">greater translation</input>
+                </form>
+            </div>
+    
+        	<div class="mapPanel">
+                <div class="groupHeader"><p>Number of maps</p></div>
+                <form>
+                    <input type="checkbox" id="cbFewerMaps">fewer maps (2-3)</input>
+                </form>
+            </div>
+           
+
+            <div id="rectangleworldURL">
+                <p class="note">See notes on usage <a href="http://rectangleworld.com/blog/archives/623" style="color:#fff" target="_blank">here</a></p>
+            </div>
+            
+            <div id="rectangleworldURL">
+                <a href="http://www.rectangleworld.com">rectangleworld.com</a>
+            </div>
+    </div>
+    <div class="panelColumn">
+    
+        	<div class="mapPanel">
+                <div class="groupHeader"><p>Symmetries</p></div>
+                <form>
+                    <input type="checkbox" id="cbRotSymm">rotational symmetry</input>
+                    <br>
+                    <span style="float:left; margin-left:1em">symmetry: </span><input type="text" maxlength="2" id="txtSymm" style="width:2em; float:left; margin-left:1em" value="3"/>
+                    <br>
+                    <br>
+                    <input type="checkbox" id="cbDihedral">dihedral symmetry</input>
+                </form>
+            </div>
+        
+        	<div class="mapPanel">
+                <div class="groupHeader"><p>Non-linearity</p></div>
+                <form>
+                    <input type="checkbox" id="cbBubble">bubble variation</input>
+                    <br/>
+                    <input type="checkbox" id="cbSwirl">swirl variation</input>
+                </form>
+            </div>
+    
+            <div class="colorPanel">
+                <div class="groupHeader"><p>Colors</p></div>
+                <form>
+                    <input type="checkbox" id="cbGrayscale" name="colorgroup">grayscale</input>
+                    <br>
+                    <input type="checkbox" id="cbBrighter" name="colorgroup" checked>brighten colors</input>
+                    <br>
+                    <input type="checkbox" id="cbPastels" name="colorgroup">pastels</input>
+                    <br>
+                    <input type="checkbox" id="cbHighGamma">high gamma</input>
+                    <br>
+                </form>
+            </div>
+        
+            <div class="presetPanel">
+                <div class="groupHeader"><p>Presets</p></div>
+                <form>
+                    <input type="button"  class="presetButton" id="btnPreset1" value="1"/> default
+                    <br/>
+                    <input type="button"  class="presetButton" id="btnPreset2" value="2"/> rorschach
+                    <br/>
+                    <input type="button"  class="presetButton" id="btnPreset3" value="3"/> floral
+                    <br/>
+                    <input type="button"  class="presetButton" id="btnPreset4" value="4"/> snowflakes
+                    <br/>
+                    <input type="button"  class="presetButton" id="btnPreset5" value="5"/> castles
+                    <br/>
+                    <input type="button"  class="presetButton" id="btnPreset6" value="6"/> swirls
+                    <br/>
+                    <input type="button"  class="presetButton" id="btnPreset7" value="7"/> bubbled
+                    <br/>
+                    <input type="button"  class="presetButton" id="btnPreset8" value="8"/> rigid maps
+                </form>
+            </div>
+    </div>
+    
+    <div class="panelColumn">
+        
+            <div class="lockPanel">
+                <div class="groupHeader"><p>Locking</p></div>
+                <form>
+                     <input type="checkbox" id="cbFixMaps">fix these base maps</input>
+                     <br/>
+                     <input type="checkbox" id="cbFixColors">fix these colors</input>
+                     <br>
+                </form>
+            </div>
+        	<div class="buttonPanel">
+                <div class="groupHeader"><p>Number of points</p></div>
+                <form>
+                    <input type="radio" id="rbNumPoints1" name="group1">lots</input>
+                    <br>
+                    <input type="radio" id="rbNumPoints2" name="group1" checked>lots and lots</input>
+                    <br>
+                    <input type="radio" id="rbNumPoints3" name="group1">browser-crashing</input>
+                    <br/>
+                    <input type="radio" id="rbNumPoints4" name="group1">seriously don't use this</input>
+                    <p class="note"><strong>Highest setting may take a few minutes to render!</strong></p><p class="note">At higher settings, your browser may complain about a long-running script, but you should be able to ignore the warning and let the calculations finish.</p>
+                    <input type="button" style="width:140px; height:24px; font-weight:bold" id="btnRegenerate" value="regenerate!"/>
+                </form>
+            </div>
+        	<div class="buttonPanel">
+                <form>
+                    <input type="button" style="width:140px; height:24px" id="btnBack" value="back to previous"/>
+                </form>
+            </div>
+        	<div class="buttonPanel">
+                <form>
+                	<p class="note">Click the button below to export a large image. The image will open in a new window. Right click on it and select "save as..." See note on Chrome issue <a href="http://rectangleworld.com/blog/archives/623" style="color:#fff" target="_blank">here</a>.</p>
+                    <input type="button" style="width:140px; height:24px" id="btnExport" value="export image (png)"/>
+                    <br>
+                    <input type="checkbox" id="cbShowMaps">stamp with maps</input>
+                </form>
+            </div>
+    </div>
+    
+
+    
+    
+</div>
+
+</body>
+</html>
